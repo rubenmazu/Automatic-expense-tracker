@@ -1,0 +1,1107 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Cheltuieli" />
+  <meta name="theme-color" content="#0f0f14" />
+  <title>Cheltuieli</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.8.0/Recharts.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f0f14;
+      --bg2: #16161f;
+      --bg3: #1e1e2a;
+      --bg4: #252535;
+      --border: #2a2a3d;
+      --text: #f0eff8;
+      --text2: #9896b8;
+      --text3: #5f5e7a;
+      --accent: #7c6aff;
+      --accent2: #a594ff;
+      --accent-glow: rgba(124, 106, 255, 0.15);
+      --green: #4ade80;
+      --red: #f87171;
+      --yellow: #fbbf24;
+      --orange: #fb923c;
+      --pink: #f472b6;
+      --cyan: #22d3ee;
+      --teal: #2dd4bf;
+      --radius: 16px;
+      --radius-sm: 10px;
+    }
+
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; overflow: hidden; }
+    #root { height: 100%; display: flex; flex-direction: column; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    /* Animations */
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+    @keyframes slideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
+    @keyframes popIn { from { opacity: 0; transform: scale(0.92); } to { opacity: 1; transform: scale(1); } }
+
+    .fade-up { animation: fadeUp 0.4s ease both; }
+    .fade-up-1 { animation-delay: 0.05s; }
+    .fade-up-2 { animation-delay: 0.1s; }
+    .fade-up-3 { animation-delay: 0.15s; }
+    .fade-up-4 { animation-delay: 0.2s; }
+    .fade-up-5 { animation-delay: 0.25s; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel" data-presets="react">
+  const { useState, useEffect, useCallback, useRef, useMemo } = React;
+  const { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } = Recharts;
+
+  // ─── PARSERS ──────────────────────────────────────────────────────────────
+  const PARSERS = {
+    revolut: {
+      name: 'Revolut',
+      color: '#7c6aff',
+      patterns: [
+        /(?:ai pl[aă]tit|plat[aă]|payment|paid|spent)\s+([0-9]+(?:[.,][0-9]+)?)\s*(?:RON|lei|MDL|EUR|USD)/i,
+        /([0-9]+(?:[.,][0-9]+)?)\s*(?:RON|lei|EUR|USD)\s+(?:la|at|to|@)\s+(.+)/i,
+        /([0-9]+(?:[.,][0-9]+)?)\s*(?:RON|lei)/i,
+      ],
+      merchantPatterns: [
+        /(?:la|at|to|@|from)\s+([A-Z][^•\n,]+)/i,
+        /(?:pl[aă]tit|payment)\s+\w+\s+(?:la|at)?\s*([A-Z][^\n,•]+)/i,
+      ]
+    },
+    brd: {
+      name: 'BRD',
+      color: '#22d3ee',
+      patterns: [
+        /([0-9]+(?:[.,][0-9]+)?)\s*(?:RON|lei)/i,
+        /suma\s+([0-9]+(?:[.,][0-9]+)?)/i,
+      ],
+      merchantPatterns: [
+        /(?:comerciant|merchant|la|at)\s*:?\s*([A-Z][^\n,•]+)/i,
+        /POS\s+([A-Z][^\n,•]+)/i,
+      ]
+    },
+    edenred: {
+      name: 'Edenred',
+      color: '#f59e0b',
+      patterns: [
+        /([0-9]+(?:[.,][0-9]+)?)\s*(?:RON|lei)/i,
+        /bon\s+(?:de\s+)?mas[aă]\s+([0-9]+(?:[.,][0-9]+)?)/i,
+      ],
+      merchantPatterns: [
+        /(?:la|at|utilizat la)\s+([A-Z][^\n,•]+)/i,
+        /([A-Z][A-Z\s]+(?:RESTAURANT|FAST FOOD|PIZZA|SUSHI|GRILL|CAFE|COFFEE))/i,
+      ]
+    }
+  };
+
+  const CATEGORIES = {
+    'Restaurant': { icon: '🍽️', color: '#f472b6' },
+    'Cafenea': { icon: '☕', color: '#fb923c' },
+    'Supermarket': { icon: '🛒', color: '#4ade80' },
+    'Transport': { icon: '🚗', color: '#22d3ee' },
+    'Combustibil': { icon: '⛽', color: '#fbbf24' },
+    'Farmacii': { icon: '💊', color: '#f87171' },
+    'Divertisment': { icon: '🎬', color: '#a78bfa' },
+    'Îmbrăcăminte': { icon: '👕', color: '#34d399' },
+    'Utilități': { icon: '🏠', color: '#60a5fa' },
+    'Sănătate': { icon: '🏥', color: '#f87171' },
+    'Sport': { icon: '💪', color: '#4ade80' },
+    'Altele': { icon: '📦', color: '#9896b8' },
+  };
+
+  const MERCHANT_CATEGORIES = {
+    'mega image': 'Supermarket', 'kaufland': 'Supermarket', 'lidl': 'Supermarket',
+    'carrefour': 'Supermarket', 'auchan': 'Supermarket', 'profi': 'Supermarket',
+    'penny': 'Supermarket', 'selgros': 'Supermarket', 'metro': 'Supermarket',
+    'starbucks': 'Cafenea', 'ted\'s': 'Cafenea', 'coffee': 'Cafenea',
+    'cafe': 'Cafenea', 'costa': 'Cafenea', 'gregory\'s': 'Cafenea',
+    'mcdonald': 'Restaurant', 'kfc': 'Restaurant', 'subway': 'Restaurant',
+    'pizza': 'Restaurant', 'restaurant': 'Restaurant', 'shawarma': 'Restaurant',
+    'sushi': 'Restaurant', 'burger': 'Restaurant', 'grill': 'Restaurant',
+    'rompetrol': 'Combustibil', 'mol': 'Combustibil', 'omv': 'Combustibil',
+    'petrom': 'Combustibil', 'lukoil': 'Combustibil', 'socar': 'Combustibil',
+    'uber': 'Transport', 'bolt': 'Transport', 'taxi': 'Transport',
+    'ratb': 'Transport', 'metrorex': 'Transport', 'cfr': 'Transport',
+    'farmacia': 'Farmacii', 'catena': 'Farmacii', 'sensiblu': 'Farmacii',
+    'dona': 'Farmacii', 'helpnet': 'Farmacii',
+    'cinema': 'Divertisment', 'cinema city': 'Divertisment', 'steam': 'Divertisment',
+    'netflix': 'Divertisment', 'spotify': 'Divertisment',
+    'decathlon': 'Sport', 'intersport': 'Sport',
+    'zara': 'Îmbrăcăminte', 'h&m': 'Îmbrăcăminte', 'reserved': 'Îmbrăcăminte',
+  };
+
+  function detectCategory(merchant) {
+    if (!merchant) return 'Altele';
+    const m = merchant.toLowerCase();
+    for (const [key, cat] of Object.entries(MERCHANT_CATEGORIES)) {
+      if (m.includes(key)) return cat;
+    }
+    return 'Altele';
+  }
+
+  function parseNotification(text, source) {
+    const parser = PARSERS[source];
+    if (!parser) return null;
+    let amount = null;
+    for (const p of parser.patterns) {
+      const m = text.match(p);
+      if (m) { amount = parseFloat((m[1] || m[0]).replace(',', '.')); break; }
+    }
+    if (!amount || amount <= 0) return null;
+    let merchant = 'Necunoscut';
+    for (const p of parser.merchantPatterns) {
+      const m = text.match(p);
+      if (m && m[1]) { merchant = m[1].trim().replace(/\s+/g, ' '); break; }
+    }
+    const category = detectCategory(merchant);
+    return { amount, merchant, category, source, sourceName: parser.name, sourceColor: parser.color };
+  }
+
+  // ─── STORAGE ──────────────────────────────────────────────────────────────
+  const STORAGE_KEY = 'cheltuieli_v1';
+
+  function loadData() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch {}
+    return { transactions: [], settings: { supabaseUrl: '', supabaseKey: '', useSupabase: false } };
+  }
+
+  function saveData(data) {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch {}
+  }
+
+  // ─── SUPABASE ─────────────────────────────────────────────────────────────
+  async function supabaseRequest(url, key, method, path, body) {
+    const res = await fetch(`${url}/rest/v1/${path}`, {
+      method,
+      headers: {
+        'apikey': key,
+        'Authorization': `Bearer ${key}`,
+        'Content-Type': 'application/json',
+        'Prefer': method === 'POST' ? 'return=representation' : '',
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!res.ok) throw new Error(`Supabase error: ${res.status}`);
+    return res.json();
+  }
+
+  // ─── HELPERS ──────────────────────────────────────────────────────────────
+  function formatAmount(n) {
+    return n.toLocaleString('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function formatDate(iso) {
+    return new Date(iso).toLocaleDateString('ro-RO', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  function groupBy(arr, key) {
+    return arr.reduce((acc, item) => {
+      const k = item[key];
+      if (!acc[k]) acc[k] = [];
+      acc[k].push(item);
+      return acc;
+    }, {});
+  }
+
+  function getMonthLabel(dateStr) {
+    return new Date(dateStr).toLocaleDateString('ro-RO', { month: 'short', year: '2-digit' });
+  }
+
+  const MONTHS_RO = ['Ian', 'Feb', 'Mar', 'Apr', 'Mai', 'Iun', 'Iul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  // ─── COMPONENTS ───────────────────────────────────────────────────────────
+
+  function Navbar({ page, setPage }) {
+    const items = [
+      { id: 'dashboard', icon: '◈', label: 'Acasă' },
+      { id: 'transactions', icon: '◎', label: 'Tranzacții' },
+      { id: 'charts', icon: '◉', label: 'Grafice' },
+      { id: 'settings', icon: '◐', label: 'Setări' },
+    ];
+    return (
+      <nav style={{
+        display: 'flex', justifyContent: 'space-around', alignItems: 'center',
+        padding: '8px 0 max(8px, env(safe-area-inset-bottom))',
+        background: 'rgba(15,15,20,0.95)', backdropFilter: 'blur(20px)',
+        borderTop: '1px solid var(--border)', flexShrink: 0,
+      }}>
+        {items.map(item => (
+          <button key={item.id} onClick={() => setPage(item.id)} style={{
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
+            background: 'none', border: 'none', cursor: 'pointer',
+            color: page === item.id ? 'var(--accent2)' : 'var(--text3)',
+            padding: '4px 16px', transition: 'color 0.2s',
+            fontSize: 11, fontFamily: 'DM Sans, sans-serif', fontWeight: 500,
+          }}>
+            <span style={{ fontSize: 22, lineHeight: 1, filter: page === item.id ? 'drop-shadow(0 0 8px var(--accent))' : 'none', transition: 'filter 0.2s' }}>{item.icon}</span>
+            {item.label}
+          </button>
+        ))}
+      </nav>
+    );
+  }
+
+  function Card({ children, style, className }) {
+    return (
+      <div className={className} style={{
+        background: 'var(--bg2)', border: '1px solid var(--border)',
+        borderRadius: 'var(--radius)', padding: 20, ...style
+      }}>
+        {children}
+      </div>
+    );
+  }
+
+  function Badge({ color, children }) {
+    return (
+      <span style={{
+        background: color + '22', color, border: `1px solid ${color}44`,
+        borderRadius: 6, padding: '2px 8px', fontSize: 12, fontWeight: 500,
+      }}>{children}</span>
+    );
+  }
+
+  function Toast({ message, type, onClose }) {
+    useEffect(() => { const t = setTimeout(onClose, 3000); return () => clearTimeout(t); }, []);
+    return (
+      <div style={{
+        position: 'fixed', bottom: 80, left: '50%', transform: 'translateX(-50%)',
+        background: type === 'error' ? '#f871711a' : '#4ade801a',
+        border: `1px solid ${type === 'error' ? '#f87171' : '#4ade80'}44`,
+        color: type === 'error' ? '#f87171' : '#4ade80',
+        padding: '10px 20px', borderRadius: 12, fontSize: 14, fontWeight: 500,
+        zIndex: 999, animation: 'popIn 0.2s ease',
+        backdropFilter: 'blur(20px)', whiteSpace: 'nowrap',
+      }}>
+        {type === 'error' ? '✕ ' : '✓ '}{message}
+      </div>
+    );
+  }
+
+  // ─── DASHBOARD ────────────────────────────────────────────────────────────
+  function Dashboard({ transactions, onAddManual }) {
+    const now = new Date();
+    const thisMonth = transactions.filter(t => {
+      const d = new Date(t.date);
+      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    });
+
+    const totalThisMonth = thisMonth.reduce((s, t) => s + t.amount, 0);
+    const lastMonth = transactions.filter(t => {
+      const d = new Date(t.date);
+      const lm = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      return d.getMonth() === lm.getMonth() && d.getFullYear() === lm.getFullYear();
+    });
+    const totalLastMonth = lastMonth.reduce((s, t) => s + t.amount, 0);
+    const diff = totalLastMonth > 0 ? ((totalThisMonth - totalLastMonth) / totalLastMonth * 100).toFixed(1) : null;
+
+    const byCat = groupBy(thisMonth, 'category');
+    const catData = Object.entries(byCat)
+      .map(([cat, txs]) => ({ cat, total: txs.reduce((s, t) => s + t.amount, 0), icon: CATEGORIES[cat]?.icon || '📦', color: CATEGORIES[cat]?.color || '#9896b8' }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 5);
+
+    const last7 = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(); d.setDate(d.getDate() - i);
+      const dayStr = d.toISOString().slice(0, 10);
+      const dayTxs = transactions.filter(t => t.date.slice(0, 10) === dayStr);
+      last7.push({ zi: ['Dum','Lun','Mar','Mie','Joi','Vin','Sâm'][d.getDay()], total: dayTxs.reduce((s, t) => s + t.amount, 0) });
+    }
+
+    const bySource = groupBy(thisMonth, 'sourceName');
+    const sourceData = Object.entries(bySource).map(([name, txs]) => ({
+      name, total: txs.reduce((s, t) => s + t.amount, 0),
+      color: PARSERS[txs[0]?.source]?.color || '#9896b8'
+    }));
+
+    const recentTxs = [...transactions].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 3);
+
+    return (
+      <div style={{ flex: 1, overflowY: 'auto', padding: '16px 16px 8px' }}>
+        {/* Header */}
+        <div className="fade-up" style={{ marginBottom: 20 }}>
+          <p style={{ color: 'var(--text3)', fontSize: 13, marginBottom: 4 }}>
+            {now.toLocaleDateString('ro-RO', { month: 'long', year: 'numeric' })}
+          </p>
+          <h1 style={{ fontFamily: 'DM Serif Display, serif', fontSize: 38, fontWeight: 400, lineHeight: 1.1, color: 'var(--text)' }}>
+            {formatAmount(totalThisMonth)} <span style={{ fontSize: 22, color: 'var(--text2)' }}>RON</span>
+          </h1>
+          {diff !== null && (
+            <p style={{ color: parseFloat(diff) > 0 ? 'var(--red)' : 'var(--green)', fontSize: 13, marginTop: 6 }}>
+              {parseFloat(diff) > 0 ? '▲' : '▼'} {Math.abs(diff)}% față de luna trecută
+            </p>
+          )}
+        </div>
+
+        {/* Quick add button */}
+        <button className="fade-up fade-up-1" onClick={onAddManual} style={{
+          width: '100%', padding: '14px', background: 'var(--accent-glow)',
+          border: '1px dashed var(--accent)', borderRadius: 'var(--radius)',
+          color: 'var(--accent2)', fontSize: 15, fontWeight: 500, cursor: 'pointer',
+          marginBottom: 16, fontFamily: 'DM Sans, sans-serif', transition: 'all 0.2s',
+        }}>
+          + Adaugă tranzacție manual
+        </button>
+
+        {/* Spending chart */}
+        {last7.some(d => d.total > 0) && (
+          <Card className="fade-up fade-up-2" style={{ marginBottom: 16 }}>
+            <p style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 16, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Ultimele 7 zile</p>
+            <ResponsiveContainer width="100%" height={120}>
+              <AreaChart data={last7}>
+                <defs>
+                  <linearGradient id="grad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#7c6aff" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#7c6aff" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <XAxis dataKey="zi" tick={{ fill: 'var(--text3)', fontSize: 11 }} axisLine={false} tickLine={false} />
+                <Tooltip contentStyle={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 13 }} formatter={v => [`${formatAmount(v)} RON`, '']} />
+                <Area type="monotone" dataKey="total" stroke="#7c6aff" strokeWidth={2} fill="url(#grad)" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </Card>
+        )}
+
+        {/* Categories */}
+        {catData.length > 0 && (
+          <Card className="fade-up fade-up-3" style={{ marginBottom: 16 }}>
+            <p style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 16, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Top categorii</p>
+            {catData.map((c, i) => (
+              <div key={c.cat} style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: i < catData.length - 1 ? 14 : 0 }}>
+                <span style={{ fontSize: 20 }}>{c.icon}</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+                    <span style={{ fontSize: 14, fontWeight: 500 }}>{c.cat}</span>
+                    <span style={{ fontSize: 14, color: 'var(--text2)' }}>{formatAmount(c.total)} RON</span>
+                  </div>
+                  <div style={{ height: 4, background: 'var(--bg4)', borderRadius: 2, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${(c.total / catData[0].total * 100).toFixed(0)}%`, background: c.color, borderRadius: 2, transition: 'width 0.5s ease' }} />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </Card>
+        )}
+
+        {/* By source */}
+        {sourceData.length > 0 && (
+          <Card className="fade-up fade-up-4" style={{ marginBottom: 16 }}>
+            <p style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 16, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Pe sursă</p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              {sourceData.map(s => (
+                <div key={s.name} style={{
+                  flex: 1, padding: '12px', background: s.color + '11',
+                  border: `1px solid ${s.color}33`, borderRadius: 12, textAlign: 'center'
+                }}>
+                  <p style={{ fontSize: 18, fontWeight: 600, color: s.color }}>{formatAmount(s.total)}</p>
+                  <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>RON</p>
+                  <p style={{ fontSize: 12, color: 'var(--text2)', marginTop: 6, fontWeight: 500 }}>{s.name}</p>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
+
+        {/* Recent */}
+        {recentTxs.length > 0 && (
+          <Card className="fade-up fade-up-5" style={{ marginBottom: 8 }}>
+            <p style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 16, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Recente</p>
+            {recentTxs.map((t, i) => (
+              <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: i < recentTxs.length - 1 ? 14 : 0 }}>
+                <div style={{ width: 38, height: 38, borderRadius: 10, background: (CATEGORIES[t.category]?.color || '#9896b8') + '22', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>
+                  {CATEGORIES[t.category]?.icon || '📦'}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ fontSize: 14, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.merchant}</p>
+                  <p style={{ fontSize: 12, color: 'var(--text3)', marginTop: 1 }}>{formatDate(t.date)}</p>
+                </div>
+                <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', flexShrink: 0 }}>-{formatAmount(t.amount)} RON</p>
+              </div>
+            ))}
+          </Card>
+        )}
+
+        {transactions.length === 0 && (
+          <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text3)' }}>
+            <p style={{ fontSize: 40, marginBottom: 16 }}>◈</p>
+            <p style={{ fontSize: 18, fontFamily: 'DM Serif Display, serif', color: 'var(--text2)', marginBottom: 8 }}>Nicio tranzacție încă</p>
+            <p style={{ fontSize: 14 }}>Adaugă manual sau configurează Shortcuts pentru import automat</p>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ─── TRANSACTIONS ─────────────────────────────────────────────────────────
+  function Transactions({ transactions, onDelete }) {
+    const [filter, setFilter] = useState('all');
+    const [search, setSearch] = useState('');
+    const [period, setPeriod] = useState('month');
+
+    const now = new Date();
+    const filtered = transactions.filter(t => {
+      const d = new Date(t.date);
+      if (period === 'week') { const w = new Date(); w.setDate(w.getDate() - 7); if (d < w) return false; }
+      if (period === 'month') { if (d.getMonth() !== now.getMonth() || d.getFullYear() !== now.getFullYear()) return false; }
+      if (period === '3months') { const t3 = new Date(); t3.setMonth(t3.getMonth() - 3); if (d < t3) return false; }
+      if (filter !== 'all' && t.category !== filter) return false;
+      if (search && !t.merchant.toLowerCase().includes(search.toLowerCase())) return false;
+      return true;
+    }).sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    const total = filtered.reduce((s, t) => s + t.amount, 0);
+
+    return (
+      <div style={{ flex: 1, overflowY: 'auto', padding: '16px 16px 8px' }}>
+        <h2 className="fade-up" style={{ fontFamily: 'DM Serif Display, serif', fontSize: 28, fontWeight: 400, marginBottom: 16 }}>Tranzacții</h2>
+
+        {/* Search */}
+        <div className="fade-up fade-up-1" style={{ position: 'relative', marginBottom: 12 }}>
+          <span style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', fontSize: 16 }}>⊕</span>
+          <input
+            value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Caută comerciant..."
+            style={{
+              width: '100%', padding: '12px 12px 12px 40px', background: 'var(--bg2)',
+              border: '1px solid var(--border)', borderRadius: 12, color: 'var(--text)',
+              fontSize: 15, fontFamily: 'DM Sans, sans-serif', outline: 'none',
+            }}
+          />
+        </div>
+
+        {/* Period filter */}
+        <div className="fade-up fade-up-2" style={{ display: 'flex', gap: 8, marginBottom: 12, overflowX: 'auto', paddingBottom: 4 }}>
+          {[['week','7 zile'],['month','Luna aceasta'],['3months','3 luni'],['all','Toate']].map(([val, label]) => (
+            <button key={val} onClick={() => setPeriod(val)} style={{
+              padding: '7px 14px', borderRadius: 20, border: '1px solid',
+              borderColor: period === val ? 'var(--accent)' : 'var(--border)',
+              background: period === val ? 'var(--accent-glow)' : 'transparent',
+              color: period === val ? 'var(--accent2)' : 'var(--text3)',
+              fontSize: 13, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap',
+              fontFamily: 'DM Sans, sans-serif',
+            }}>{label}</button>
+          ))}
+        </div>
+
+        {/* Category filter */}
+        <div className="fade-up fade-up-3" style={{ display: 'flex', gap: 8, marginBottom: 16, overflowX: 'auto', paddingBottom: 4 }}>
+          <button onClick={() => setFilter('all')} style={{
+            padding: '6px 12px', borderRadius: 20, border: '1px solid',
+            borderColor: filter === 'all' ? 'var(--accent)' : 'var(--border)',
+            background: filter === 'all' ? 'var(--accent-glow)' : 'transparent',
+            color: filter === 'all' ? 'var(--accent2)' : 'var(--text3)',
+            fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'DM Sans, sans-serif',
+          }}>Toate</button>
+          {Object.entries(CATEGORIES).map(([cat, { icon, color }]) => (
+            <button key={cat} onClick={() => setFilter(cat)} style={{
+              padding: '6px 12px', borderRadius: 20, border: '1px solid',
+              borderColor: filter === cat ? color : 'var(--border)',
+              background: filter === cat ? color + '22' : 'transparent',
+              color: filter === cat ? color : 'var(--text3)',
+              fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'DM Sans, sans-serif',
+            }}>{icon} {cat}</button>
+          ))}
+        </div>
+
+        {/* Summary */}
+        {filtered.length > 0 && (
+          <div className="fade-up fade-up-4" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16, padding: '12px 16px', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 12 }}>
+            <span style={{ color: 'var(--text3)', fontSize: 14 }}>{filtered.length} tranzacții</span>
+            <span style={{ fontWeight: 600, fontSize: 14 }}>{formatAmount(total)} RON</span>
+          </div>
+        )}
+
+        {/* List */}
+        {filtered.map((t, i) => {
+          const cat = CATEGORIES[t.category] || CATEGORIES['Altele'];
+          const srcColor = PARSERS[t.source]?.color || '#9896b8';
+          return (
+            <div key={t.id} className="fade-up" style={{ animationDelay: `${i * 0.03}s`, display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10, padding: '14px', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)' }}>
+              <div style={{ width: 42, height: 42, borderRadius: 12, background: cat.color + '22', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>
+                {cat.icon}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ fontSize: 15, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.merchant}</p>
+                <div style={{ display: 'flex', gap: 6, marginTop: 4, alignItems: 'center' }}>
+                  <span style={{ fontSize: 11, color: 'var(--text3)' }}>{formatDate(t.date)}</span>
+                  <span style={{ fontSize: 11, color: srcColor, background: srcColor + '18', padding: '1px 6px', borderRadius: 4 }}>{t.sourceName}</span>
+                </div>
+              </div>
+              <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                <p style={{ fontSize: 16, fontWeight: 600 }}>-{formatAmount(t.amount)}</p>
+                <p style={{ fontSize: 11, color: 'var(--text3)' }}>RON</p>
+              </div>
+              <button onClick={() => onDelete(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: 18, padding: '4px', flexShrink: 0 }}>×</button>
+            </div>
+          );
+        })}
+
+        {filtered.length === 0 && (
+          <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text3)' }}>
+            <p style={{ fontSize: 14 }}>Nicio tranzacție găsită</p>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ─── CHARTS ───────────────────────────────────────────────────────────────
+  function Charts({ transactions }) {
+    const [activeChart, setActiveChart] = useState('pie');
+
+    // Monthly data — last 6 months
+    const monthlyData = useMemo(() => {
+      const months = {};
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - i);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        months[key] = { month: MONTHS_RO[d.getMonth()], total: 0, revolut: 0, brd: 0, edenred: 0 };
+      }
+      transactions.forEach(t => {
+        const key = t.date.slice(0, 7);
+        if (months[key]) {
+          months[key].total += t.amount;
+          if (t.source === 'revolut') months[key].revolut += t.amount;
+          if (t.source === 'brd') months[key].brd += t.amount;
+          if (t.source === 'edenred') months[key].edenred += t.amount;
+        }
+      });
+      return Object.values(months);
+    }, [transactions]);
+
+    // Category pie for this month
+    const now = new Date();
+    const thisMonth = transactions.filter(t => {
+      const d = new Date(t.date);
+      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    });
+    const catPieData = useMemo(() => {
+      const byCat = groupBy(thisMonth, 'category');
+      return Object.entries(byCat).map(([cat, txs]) => ({
+        name: `${CATEGORIES[cat]?.icon || '📦'} ${cat}`,
+        value: txs.reduce((s, t) => s + t.amount, 0),
+        color: CATEGORIES[cat]?.color || '#9896b8',
+      })).sort((a, b) => b.value - a.value);
+    }, [transactions]);
+
+    // Top merchants
+    const topMerchants = useMemo(() => {
+      const byM = groupBy(transactions, 'merchant');
+      return Object.entries(byM)
+        .map(([name, txs]) => ({ name, total: txs.reduce((s, t) => s + t.amount, 0), count: txs.length }))
+        .sort((a, b) => b.total - a.total).slice(0, 8);
+    }, [transactions]);
+
+    // Daily average
+    const avgDaily = useMemo(() => {
+      if (!thisMonth.length) return 0;
+      const days = now.getDate();
+      return thisMonth.reduce((s, t) => s + t.amount, 0) / days;
+    }, [transactions]);
+
+    const charts = [
+      { id: 'pie', label: '🥧 Categorii' },
+      { id: 'monthly', label: '📊 Lunar' },
+      { id: 'sources', label: '💳 Surse' },
+      { id: 'merchants', label: '🏪 Comercianți' },
+    ];
+
+    const CustomTooltip = ({ active, payload, label }) => {
+      if (!active || !payload?.length) return null;
+      return (
+        <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 14px', fontSize: 13 }}>
+          {label && <p style={{ color: 'var(--text2)', marginBottom: 6 }}>{label}</p>}
+          {payload.map((p, i) => (
+            <p key={i} style={{ color: p.color || 'var(--text)' }}>{p.name}: <strong>{formatAmount(p.value)} RON</strong></p>
+          ))}
+        </div>
+      );
+    };
+
+    return (
+      <div style={{ flex: 1, overflowY: 'auto', padding: '16px 16px 8px' }}>
+        <h2 className="fade-up" style={{ fontFamily: 'DM Serif Display, serif', fontSize: 28, fontWeight: 400, marginBottom: 16 }}>Grafice</h2>
+
+        {/* Stats row */}
+        <div className="fade-up fade-up-1" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
+          <Card style={{ padding: 14 }}>
+            <p style={{ fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Luna aceasta</p>
+            <p style={{ fontSize: 22, fontWeight: 600, marginTop: 4, color: 'var(--accent2)' }}>{formatAmount(thisMonth.reduce((s, t) => s + t.amount, 0))}</p>
+            <p style={{ fontSize: 11, color: 'var(--text3)' }}>RON</p>
+          </Card>
+          <Card style={{ padding: 14 }}>
+            <p style={{ fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Medie zilnică</p>
+            <p style={{ fontSize: 22, fontWeight: 600, marginTop: 4, color: 'var(--teal)' }}>{formatAmount(avgDaily)}</p>
+            <p style={{ fontSize: 11, color: 'var(--text3)' }}>RON/zi</p>
+          </Card>
+          <Card style={{ padding: 14 }}>
+            <p style={{ fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total tranzacții</p>
+            <p style={{ fontSize: 22, fontWeight: 600, marginTop: 4 }}>{transactions.length}</p>
+            <p style={{ fontSize: 11, color: 'var(--text3)' }}>toate timpurile</p>
+          </Card>
+          <Card style={{ padding: 14 }}>
+            <p style={{ fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total general</p>
+            <p style={{ fontSize: 22, fontWeight: 600, marginTop: 4, color: 'var(--yellow)' }}>{formatAmount(transactions.reduce((s, t) => s + t.amount, 0))}</p>
+            <p style={{ fontSize: 11, color: 'var(--text3)' }}>RON</p>
+          </Card>
+        </div>
+
+        {/* Chart selector */}
+        <div className="fade-up fade-up-2" style={{ display: 'flex', gap: 8, marginBottom: 16, overflowX: 'auto', paddingBottom: 4 }}>
+          {charts.map(c => (
+            <button key={c.id} onClick={() => setActiveChart(c.id)} style={{
+              padding: '8px 14px', borderRadius: 20, border: '1px solid',
+              borderColor: activeChart === c.id ? 'var(--accent)' : 'var(--border)',
+              background: activeChart === c.id ? 'var(--accent-glow)' : 'transparent',
+              color: activeChart === c.id ? 'var(--accent2)' : 'var(--text3)',
+              fontSize: 13, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap',
+              fontFamily: 'DM Sans, sans-serif',
+            }}>{c.label}</button>
+          ))}
+        </div>
+
+        {/* Charts */}
+        {activeChart === 'pie' && (
+          <Card className="fade-up">
+            <p style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 20, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Categorii luna aceasta</p>
+            {catPieData.length > 0 ? (
+              <>
+                <ResponsiveContainer width="100%" height={220}>
+                  <PieChart>
+                    <Pie data={catPieData} cx="50%" cy="50%" outerRadius={90} innerRadius={50} dataKey="value" paddingAngle={3}>
+                      {catPieData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                    </Pie>
+                    <Tooltip content={<CustomTooltip />} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 16 }}>
+                  {catPieData.map((c, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ width: 10, height: 10, borderRadius: 3, background: c.color, flexShrink: 0 }} />
+                      <span style={{ flex: 1, fontSize: 14 }}>{c.name}</span>
+                      <span style={{ fontSize: 14, fontWeight: 500 }}>{formatAmount(c.value)} RON</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : <p style={{ color: 'var(--text3)', textAlign: 'center', padding: 30 }}>Nicio dată disponibilă</p>}
+          </Card>
+        )}
+
+        {activeChart === 'monthly' && (
+          <Card className="fade-up">
+            <p style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 20, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Evoluție lunară</p>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={monthlyData}>
+                <defs>
+                  <linearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#7c6aff" stopOpacity={0.9} />
+                    <stop offset="95%" stopColor="#7c6aff" stopOpacity={0.4} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                <XAxis dataKey="month" tick={{ fill: 'var(--text3)', fontSize: 12 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: 'var(--text3)', fontSize: 11 }} axisLine={false} tickLine={false} />
+                <Tooltip content={<CustomTooltip />} />
+                <Bar dataKey="total" name="Total" fill="url(#barGrad)" radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </Card>
+        )}
+
+        {activeChart === 'sources' && (
+          <Card className="fade-up">
+            <p style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 20, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Pe sursă — ultimele 6 luni</p>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={monthlyData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                <XAxis dataKey="month" tick={{ fill: 'var(--text3)', fontSize: 12 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: 'var(--text3)', fontSize: 11 }} axisLine={false} tickLine={false} />
+                <Tooltip content={<CustomTooltip />} />
+                <Legend wrapperStyle={{ fontSize: 12, color: 'var(--text2)' }} />
+                <Bar dataKey="revolut" name="Revolut" fill="#7c6aff" radius={[3, 3, 0, 0]} stackId="a" />
+                <Bar dataKey="brd" name="BRD" fill="#22d3ee" radius={[3, 3, 0, 0]} stackId="a" />
+                <Bar dataKey="edenred" name="Edenred" fill="#f59e0b" radius={[3, 3, 0, 0]} stackId="a" />
+              </BarChart>
+            </ResponsiveContainer>
+          </Card>
+        )}
+
+        {activeChart === 'merchants' && (
+          <Card className="fade-up">
+            <p style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 20, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Top comercianți</p>
+            {topMerchants.length > 0 ? (
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={topMerchants} layout="vertical">
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+                  <XAxis type="number" tick={{ fill: 'var(--text3)', fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <YAxis type="category" dataKey="name" tick={{ fill: 'var(--text2)', fontSize: 12 }} axisLine={false} tickLine={false} width={90} />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Bar dataKey="total" name="Total" fill="#a594ff" radius={[0, 6, 6, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : <p style={{ color: 'var(--text3)', textAlign: 'center', padding: 30 }}>Nicio dată disponibilă</p>}
+          </Card>
+        )}
+      </div>
+    );
+  }
+
+  // ─── SETTINGS ─────────────────────────────────────────────────────────────
+  function Settings({ settings, onSave, onImport, transactionCount }) {
+    const [url, setUrl] = useState(settings.supabaseUrl || '');
+    const [key, setKey] = useState(settings.supabaseKey || '');
+    const [testing, setTesting] = useState(false);
+    const [status, setStatus] = useState(null);
+
+    async function testConnection() {
+      setTesting(true); setStatus(null);
+      try {
+        await supabaseRequest(url, key, 'GET', 'transactions?limit=1', null);
+        setStatus('ok'); onSave({ supabaseUrl: url, supabaseKey: key, useSupabase: true });
+      } catch {
+        try {
+          await supabaseRequest(url, key, 'POST', 'transactions', { amount: 0, merchant: '__test__', category: 'test', source: 'test', source_name: 'test', date: new Date().toISOString() });
+          setStatus('ok'); onSave({ supabaseUrl: url, supabaseKey: key, useSupabase: true });
+        } catch (e) { setStatus('error'); }
+      }
+      setTesting(false);
+    }
+
+    return (
+      <div style={{ flex: 1, overflowY: 'auto', padding: '16px 16px 8px' }}>
+        <h2 className="fade-up" style={{ fontFamily: 'DM Serif Display, serif', fontSize: 28, fontWeight: 400, marginBottom: 20 }}>Setări</h2>
+
+        {/* Stats */}
+        <Card className="fade-up fade-up-1" style={{ marginBottom: 16 }}>
+          <p style={{ fontSize: 13, color: 'var(--text3)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 12 }}>Stocare</p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <p style={{ fontSize: 16, fontWeight: 600 }}>{transactionCount} tranzacții</p>
+              <p style={{ fontSize: 13, color: 'var(--text3)', marginTop: 2 }}>
+                {settings.useSupabase ? '☁️ Supabase activ' : '📱 Stocare locală'}
+              </p>
+            </div>
+            <Badge color={settings.useSupabase ? '#4ade80' : '#fbbf24'}>
+              {settings.useSupabase ? 'Cloud' : 'Local'}
+            </Badge>
+          </div>
+        </Card>
+
+        {/* Supabase */}
+        <Card className="fade-up fade-up-2" style={{ marginBottom: 16 }}>
+          <p style={{ fontSize: 13, color: 'var(--text3)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Conectare Supabase</p>
+          <p style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 16, lineHeight: 1.5 }}>
+            Opțional — pentru backup în cloud și acces de pe orice dispozitiv.
+          </p>
+
+          <label style={{ display: 'block', fontSize: 13, color: 'var(--text2)', marginBottom: 6 }}>URL Proiect</label>
+          <input value={url} onChange={e => setUrl(e.target.value)}
+            placeholder="https://xxxx.supabase.co"
+            style={{ width: '100%', padding: '12px', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 10, color: 'var(--text)', fontSize: 14, fontFamily: 'DM Sans, sans-serif', marginBottom: 12, outline: 'none' }}
+          />
+
+          <label style={{ display: 'block', fontSize: 13, color: 'var(--text2)', marginBottom: 6 }}>Cheie Anon</label>
+          <input value={key} onChange={e => setKey(e.target.value)} type="password"
+            placeholder="eyJhbGci..."
+            style={{ width: '100%', padding: '12px', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 10, color: 'var(--text)', fontSize: 14, fontFamily: 'DM Sans, sans-serif', marginBottom: 16, outline: 'none' }}
+          />
+
+          <button onClick={testConnection} disabled={testing || !url || !key} style={{
+            width: '100%', padding: '13px', background: 'var(--accent)', border: 'none',
+            borderRadius: 12, color: 'white', fontSize: 15, fontWeight: 600,
+            cursor: testing ? 'default' : 'pointer', opacity: (!url || !key) ? 0.5 : 1,
+            fontFamily: 'DM Sans, sans-serif',
+          }}>
+            {testing ? 'Se verifică...' : 'Conectează Supabase'}
+          </button>
+
+          {status === 'ok' && <p style={{ color: 'var(--green)', fontSize: 13, marginTop: 10, textAlign: 'center' }}>✓ Conectat cu succes!</p>}
+          {status === 'error' && <p style={{ color: 'var(--red)', fontSize: 13, marginTop: 10, textAlign: 'center' }}>✕ Eroare — verifică URL-ul și cheia</p>}
+        </Card>
+
+        {/* Import */}
+        <Card className="fade-up fade-up-3" style={{ marginBottom: 16 }}>
+          <p style={{ fontSize: 13, color: 'var(--text3)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 12 }}>Import manual</p>
+          <p style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 16, lineHeight: 1.5 }}>
+            Poți adăuga tranzacții direct dintr-un text de notificare — util pentru testare sau import manual.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {Object.entries(PARSERS).map(([src, p]) => (
+              <button key={src} onClick={() => onImport(src)} style={{
+                padding: '12px 16px', background: p.color + '15', border: `1px solid ${p.color}33`,
+                borderRadius: 10, color: p.color, fontSize: 14, fontWeight: 500,
+                cursor: 'pointer', textAlign: 'left', fontFamily: 'DM Sans, sans-serif',
+              }}>
+                Importă notificare {p.name}
+              </button>
+            ))}
+          </div>
+        </Card>
+
+        {/* Shortcuts guide */}
+        <Card className="fade-up fade-up-4" style={{ marginBottom: 16 }}>
+          <p style={{ fontSize: 13, color: 'var(--text3)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 12 }}>Automatizare iPhone</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {[
+              ['1', 'Deschide aplicația Shortcuts pe iPhone'],
+              ['2', 'Apasă Automation → New Automation'],
+              ['3', 'Alege App → selectează Revolut (sau BRD/Edenred)'],
+              ['4', 'Alege Opens → Next'],
+              ['5', 'Adaugă acțiunea Get My Shortcuts → Text → URL Request'],
+              ['6', 'URL: adresa aplicației + /api/transaction'],
+              ['7', 'Dezactivează Ask Before Running'],
+            ].map(([num, text]) => (
+              <div key={num} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                <div style={{ width: 24, height: 24, borderRadius: 8, background: 'var(--accent-glow)', border: '1px solid var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: 'var(--accent2)', flexShrink: 0, fontWeight: 600 }}>{num}</div>
+                <p style={{ fontSize: 14, color: 'var(--text2)', lineHeight: 1.5, marginTop: 2 }}>{text}</p>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  // ─── ADD MODAL ────────────────────────────────────────────────────────────
+  function AddModal({ onClose, onAdd, defaultSource }) {
+    const [amount, setAmount] = useState('');
+    const [merchant, setMerchant] = useState('');
+    const [category, setCategory] = useState('Altele');
+    const [source, setSource] = useState(defaultSource || 'revolut');
+    const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+    const [notifText, setNotifText] = useState('');
+    const [mode, setMode] = useState('manual');
+
+    function handleParse() {
+      const parsed = parseNotification(notifText, source);
+      if (parsed) {
+        setAmount(String(parsed.amount));
+        setMerchant(parsed.merchant);
+        setCategory(parsed.category);
+      }
+    }
+
+    function handleAdd() {
+      if (!amount || isNaN(parseFloat(amount))) return;
+      const srcParser = PARSERS[source];
+      onAdd({
+        id: Date.now().toString(),
+        amount: parseFloat(amount),
+        merchant: merchant || 'Necunoscut',
+        category,
+        source,
+        sourceName: srcParser?.name || source,
+        sourceColor: srcParser?.color || '#9896b8',
+        date: new Date(date).toISOString(),
+      });
+      onClose();
+    }
+
+    return (
+      <div style={{
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 100,
+        display: 'flex', alignItems: 'flex-end', animation: 'fadeIn 0.2s',
+      }} onClick={e => e.target === e.currentTarget && onClose()}>
+        <div style={{
+          width: '100%', background: 'var(--bg2)', borderRadius: '24px 24px 0 0',
+          padding: '24px 20px max(24px, env(safe-area-inset-bottom))',
+          animation: 'slideIn 0.25s ease', maxHeight: '90vh', overflowY: 'auto',
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+            <h3 style={{ fontFamily: 'DM Serif Display, serif', fontSize: 22, fontWeight: 400 }}>Adaugă tranzacție</h3>
+            <button onClick={onClose} style={{ background: 'var(--bg3)', border: 'none', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', color: 'var(--text2)', fontSize: 18 }}>×</button>
+          </div>
+
+          {/* Mode toggle */}
+          <div style={{ display: 'flex', background: 'var(--bg3)', borderRadius: 10, padding: 3, marginBottom: 20 }}>
+            {[['manual', 'Manual'], ['notif', 'Din notificare']].map(([id, label]) => (
+              <button key={id} onClick={() => setMode(id)} style={{
+                flex: 1, padding: '8px', borderRadius: 8, border: 'none',
+                background: mode === id ? 'var(--bg4)' : 'transparent',
+                color: mode === id ? 'var(--text)' : 'var(--text3)',
+                fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif',
+              }}>{label}</button>
+            ))}
+          </div>
+
+          {/* Source */}
+          <label style={{ display: 'block', fontSize: 13, color: 'var(--text2)', marginBottom: 6 }}>Sursă</label>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+            {Object.entries(PARSERS).map(([src, p]) => (
+              <button key={src} onClick={() => setSource(src)} style={{
+                flex: 1, padding: '10px', borderRadius: 10, border: '1px solid',
+                borderColor: source === src ? p.color : 'var(--border)',
+                background: source === src ? p.color + '22' : 'transparent',
+                color: source === src ? p.color : 'var(--text3)',
+                fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif',
+              }}>{p.name}</button>
+            ))}
+          </div>
+
+          {mode === 'notif' ? (
+            <>
+              <label style={{ display: 'block', fontSize: 13, color: 'var(--text2)', marginBottom: 6 }}>Text notificare</label>
+              <textarea value={notifText} onChange={e => setNotifText(e.target.value)}
+                placeholder={`Copiază textul notificării de la ${PARSERS[source]?.name}...`}
+                style={{ width: '100%', height: 100, padding: '12px', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 10, color: 'var(--text)', fontSize: 14, fontFamily: 'DM Sans, sans-serif', resize: 'none', outline: 'none', marginBottom: 10 }}
+              />
+              <button onClick={handleParse} style={{ width: '100%', padding: '12px', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 10, color: 'var(--text2)', fontSize: 14, fontWeight: 500, cursor: 'pointer', marginBottom: 16, fontFamily: 'DM Sans, sans-serif' }}>
+                Parsează notificarea
+              </button>
+            </>
+          ) : null}
+
+          {/* Amount */}
+          <label style={{ display: 'block', fontSize: 13, color: 'var(--text2)', marginBottom: 6 }}>Sumă (RON)</label>
+          <input value={amount} onChange={e => setAmount(e.target.value)} type="number" placeholder="0.00" inputMode="decimal"
+            style={{ width: '100%', padding: '12px', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 10, color: 'var(--text)', fontSize: 18, fontWeight: 600, fontFamily: 'DM Sans, sans-serif', marginBottom: 14, outline: 'none' }}
+          />
+
+          {/* Merchant */}
+          <label style={{ display: 'block', fontSize: 13, color: 'var(--text2)', marginBottom: 6 }}>Comerciant</label>
+          <input value={merchant} onChange={e => { setMerchant(e.target.value); setCategory(detectCategory(e.target.value)); }}
+            placeholder="ex: Mega Image"
+            style={{ width: '100%', padding: '12px', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 10, color: 'var(--text)', fontSize: 15, fontFamily: 'DM Sans, sans-serif', marginBottom: 14, outline: 'none' }}
+          />
+
+          {/* Category */}
+          <label style={{ display: 'block', fontSize: 13, color: 'var(--text2)', marginBottom: 6 }}>Categorie</label>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+            {Object.entries(CATEGORIES).map(([cat, { icon, color }]) => (
+              <button key={cat} onClick={() => setCategory(cat)} style={{
+                padding: '7px 12px', borderRadius: 20, border: '1px solid',
+                borderColor: category === cat ? color : 'var(--border)',
+                background: category === cat ? color + '22' : 'transparent',
+                color: category === cat ? color : 'var(--text3)',
+                fontSize: 13, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif',
+              }}>{icon} {cat}</button>
+            ))}
+          </div>
+
+          {/* Date */}
+          <label style={{ display: 'block', fontSize: 13, color: 'var(--text2)', marginBottom: 6 }}>Data</label>
+          <input value={date} onChange={e => setDate(e.target.value)} type="date"
+            style={{ width: '100%', padding: '12px', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 10, color: 'var(--text)', fontSize: 15, fontFamily: 'DM Sans, sans-serif', marginBottom: 20, outline: 'none', colorScheme: 'dark' }}
+          />
+
+          <button onClick={handleAdd} disabled={!amount} style={{
+            width: '100%', padding: '15px', background: 'var(--accent)', border: 'none',
+            borderRadius: 14, color: 'white', fontSize: 16, fontWeight: 600,
+            cursor: amount ? 'pointer' : 'default', opacity: amount ? 1 : 0.5,
+            fontFamily: 'DM Sans, sans-serif',
+          }}>
+            Salvează tranzacția
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── APP ──────────────────────────────────────────────────────────────────
+  function App() {
+    const [data, setData] = useState(loadData);
+    const [page, setPage] = useState('dashboard');
+    const [showAdd, setShowAdd] = useState(false);
+    const [addSource, setAddSource] = useState('revolut');
+    const [toast, setToast] = useState(null);
+
+    const { transactions, settings } = data;
+
+    function update(newData) {
+      setData(newData);
+      saveData(newData);
+    }
+
+    function addTransaction(tx) {
+      const newTxs = [tx, ...transactions];
+      update({ ...data, transactions: newTxs });
+      setToast({ message: `${formatAmount(tx.amount)} RON salvat!`, type: 'success' });
+    }
+
+    function deleteTransaction(id) {
+      update({ ...data, transactions: transactions.filter(t => t.id !== id) });
+      setToast({ message: 'Tranzacție ștearsă', type: 'success' });
+    }
+
+    function saveSettings(newSettings) {
+      update({ ...data, settings: { ...settings, ...newSettings } });
+    }
+
+    function handleImport(source) {
+      setAddSource(source);
+      setShowAdd(true);
+    }
+
+    // Expose API endpoint for Shortcuts via URL hash
+    useEffect(() => {
+      function handleHash() {
+        const hash = window.location.hash;
+        if (hash.startsWith('#add=')) {
+          try {
+            const raw = decodeURIComponent(hash.slice(5));
+            const parts = raw.split('|');
+            const source = parts[0] || 'revolut';
+            const text = parts[1] || '';
+            const parsed = parseNotification(text, source);
+            if (parsed) {
+              addTransaction({ id: Date.now().toString(), ...parsed, date: new Date().toISOString() });
+            }
+            window.location.hash = '';
+          } catch {}
+        }
+      }
+      window.addEventListener('hashchange', handleHash);
+      handleHash();
+      return () => window.removeEventListener('hashchange', handleHash);
+    }, [transactions]);
+
+    return (
+      <>
+        <div style={{
+          flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden',
+          paddingTop: 'env(safe-area-inset-top)',
+        }}>
+          {page === 'dashboard' && <Dashboard transactions={transactions} onAddManual={() => setShowAdd(true)} />}
+          {page === 'transactions' && <Transactions transactions={transactions} onDelete={deleteTransaction} />}
+          {page === 'charts' && <Charts transactions={transactions} />}
+          {page === 'settings' && <Settings settings={settings} onSave={saveSettings} onImport={handleImport} transactionCount={transactions.length} />}
+        </div>
+
+        <Navbar page={page} setPage={setPage} />
+
+        {showAdd && <AddModal onClose={() => setShowAdd(false)} onAdd={addTransaction} defaultSource={addSource} />}
+        {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+      </>
+    );
+  }
+
+  ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
